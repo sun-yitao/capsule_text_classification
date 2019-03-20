@@ -192,11 +192,11 @@ with tf.device('/gpu:0'):
         loss = margin_loss(y, activations)
     if args.loss_type == 'cross_entropy':
         loss = cross_entropy(y, activations)
-
+with tf.device('/cpu:0'):
     y_pred = tf.argmax(activations, axis=1, name="y_proba")    
     correct = tf.equal(tf.argmax(y, axis=1), y_pred, name="correct")
     accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
-
+with tf.device('/gpu:0'):
     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     training_op = optimizer.minimize(loss, name="training_op")
     gradients, variables = zip(*optimizer.compute_gradients(loss))
