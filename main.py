@@ -154,7 +154,7 @@ with tf.device('/gpu:0'):
 
     #w2v = np.array(w2v,dtype=np.float32)
     if args.embedding_type == 'rand':
-        W1 = tf.Variable(tf.random_uniform([args.vocab_size, args.vec_size], -0.25, 0.25),name="Wemb")
+        W1 = tf.Variable(tf.random_uniform([tf.float32(args.vocab_size), tf.float32(args.vec_size)], -0.25, 0.25),name="Wemb")
         X_embedding = tf.nn.embedding_lookup(W1, X)
         X_embedding = X_embedding[...,tf.newaxis] 
     if args.embedding_type == 'static':
@@ -207,8 +207,8 @@ with tf.device('/gpu:0'):
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
-#sess = tf.InteractiveSession(config=config)
-sess = tf.Session(config=config)
+sess = tf.InteractiveSession(config=config)
+#sess = tf.Session(config=config)
 from keras import utils
 
 n_iterations_per_epoch = len(train) // args.batch_size
