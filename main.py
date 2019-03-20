@@ -154,7 +154,7 @@ with tf.device('/gpu:0'):
 
     #w2v = np.array(w2v,dtype=np.float32)
     if args.embedding_type == 'rand':
-        W1 = tf.Variable(tf.random_uniform([tf.float32(args.vocab_size), tf.float32(args.vec_size)], -0.25, 0.25),name="Wemb")
+        W1 = tf.Variable(tf.random_uniform([float(args.vocab_size), float(args.vec_size)], -0.25, 0.25),name="Wemb")
         X_embedding = tf.nn.embedding_lookup(W1, X)
         X_embedding = X_embedding[...,tf.newaxis] 
     if args.embedding_type == 'static':
