@@ -147,8 +147,8 @@ with tf.device('/gpu:0'):
     X = tf.placeholder(tf.int32, [args.batch_size, args.max_sent], name="input_x")
     y = tf.placeholder(tf.int64, [args.batch_size, int(args.num_classes)], name="input_y")
     is_training = tf.placeholder_with_default(False, shape=())    
-    learning_rate = tf.placeholder(dtype='float32') 
-    margin = tf.placeholder(shape=(),dtype='float32') 
+    learning_rate = tf.placeholder(dtype='float32', name='learning_rate') 
+    margin = tf.placeholder(shape=(),dtype='float32', name='margin') 
 
     l2_loss = tf.constant(0.0)
 
