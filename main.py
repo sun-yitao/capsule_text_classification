@@ -27,7 +27,7 @@ TEST_CSV = str(psychic_learners_dir / 'data' / 'csvs' /
 tf.reset_default_graph()
 np.random.seed(0)
 tf.set_random_seed(0)
-#tf.logging.set_verbosity(tf.logging.FATAL)
+tf.logging.set_verbosity(tf.logging.INFO)
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--embedding_type', type=str, default='static',
