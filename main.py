@@ -143,67 +143,67 @@ label = ['-1', 'earn', 'money-fx', 'trade', 'acq', 'grain', 'interest', 'crude',
 label = map(str,label)
 args.max_sent = 16
 threshold = 0.5
+with tf.device('/gpu:0'):
+    X = tf.placeholder(tf.int32, [args.batch_size, args.max_sent], name="input_x")
+    y = tf.placeholder(tf.int64, [args.batch_size, int(args.num_classes)], name="input_y")
+    is_training = tf.placeholder_with_default(False, shape=())    
+    learning_rate = tf.placeholder(dtype='float32') 
+    margin = tf.placeholder(shape=(),dtype='float32') 
 
-X = tf.placeholder(tf.int32, [args.batch_size, args.max_sent], name="input_x")
-y = tf.placeholder(tf.int64, [args.batch_size, int(args.num_classes)], name="input_y")
-is_training = tf.placeholder_with_default(False, shape=())    
-learning_rate = tf.placeholder(dtype='float32') 
-margin = tf.placeholder(shape=(),dtype='float32') 
+    l2_loss = tf.constant(0.0)
 
-l2_loss = tf.constant(0.0)
+    #w2v = np.array(w2v,dtype=np.float32)
+    if args.embedding_type == 'rand':
+        W1 = tf.Variable(tf.random_uniform([args.vocab_size, args.vec_size], -0.25, 0.25),name="Wemb")
+        X_embedding = tf.nn.embedding_lookup(W1, X)
+        X_embedding = X_embedding[...,tf.newaxis] 
+    if args.embedding_type == 'static':
+        W1 = tf.Variable(w2v, trainable = False)
+        X_embedding = tf.nn.embedding_lookup(W1, X)
+        X_embedding = X_embedding[...,tf.newaxis] 
+    if args.embedding_type == 'nonstatic':
+        W1 = tf.Variable(w2v, trainable = True)
+        X_embedding = tf.nn.embedding_lookup(W1, X)
+        X_embedding = X_embedding[...,tf.newaxis] 
+    if args.embedding_type == 'multi-channel':
+        W1 = tf.Variable(w2v, trainable = True)
+        W2 = tf.Variable(w2v, trainable = False)
+        X_1 = tf.nn.embedding_lookup(W1, X)
+        X_2 = tf.nn.embedding_lookup(W2, X) 
+        X_1 = X_1[...,tf.newaxis]
+        X_2 = X_2[...,tf.newaxis]
+        X_embedding = tf.concat([X_1,X_2],axis=-1)
 
-#w2v = np.array(w2v,dtype=np.float32)
-if args.embedding_type == 'rand':
-    W1 = tf.Variable(tf.random_uniform([args.vocab_size, args.vec_size], -0.25, 0.25),name="Wemb")
-    X_embedding = tf.nn.embedding_lookup(W1, X)
-    X_embedding = X_embedding[...,tf.newaxis] 
-if args.embedding_type == 'static':
-    W1 = tf.Variable(w2v, trainable = False)
-    X_embedding = tf.nn.embedding_lookup(W1, X)
-    X_embedding = X_embedding[...,tf.newaxis] 
-if args.embedding_type == 'nonstatic':
-    W1 = tf.Variable(w2v, trainable = True)
-    X_embedding = tf.nn.embedding_lookup(W1, X)
-    X_embedding = X_embedding[...,tf.newaxis] 
-if args.embedding_type == 'multi-channel':
-    W1 = tf.Variable(w2v, trainable = True)
-    W2 = tf.Variable(w2v, trainable = False)
-    X_1 = tf.nn.embedding_lookup(W1, X)
-    X_2 = tf.nn.embedding_lookup(W2, X) 
-    X_1 = X_1[...,tf.newaxis]
-    X_2 = X_2[...,tf.newaxis]
-    X_embedding = tf.concat([X_1,X_2],axis=-1)
+    tf.logging.info("input dimension:{}".format(X_embedding.get_shape()))
 
-tf.logging.info("input dimension:{}".format(X_embedding.get_shape()))
+    if args.model_type == 'capsule-A':    
+        poses, activations = capsule_model_A(X_embedding, int(args.num_classes))
+    if args.model_type == 'capsule-B':    
+        poses, activations = capsule_model_B(X_embedding, int(args.num_classes))
+    if args.model_type == 'CNN':    
+        poses, activations = baseline_model_cnn(X_embedding, int(args.num_classes))
+    if args.model_type == 'KIMCNN':    
+        poses, activations = baseline_model_kimcnn(X_embedding, args.max_sent, int(args.num_classes))
+        
+    if args.loss_type == 'spread_loss':
+        loss = spread_loss(y, activations, margin)
+    if args.loss_type == 'margin_loss':    
+        loss = margin_loss(y, activations)
+    if args.loss_type == 'cross_entropy':
+        loss = cross_entropy(y, activations)
 
-if args.model_type == 'capsule-A':    
-    poses, activations = capsule_model_A(X_embedding, int(args.num_classes))
-if args.model_type == 'capsule-B':    
-    poses, activations = capsule_model_B(X_embedding, int(args.num_classes))
-if args.model_type == 'CNN':    
-    poses, activations = baseline_model_cnn(X_embedding, int(args.num_classes))
-if args.model_type == 'KIMCNN':    
-    poses, activations = baseline_model_kimcnn(X_embedding, args.max_sent, int(args.num_classes))
-    
-if args.loss_type == 'spread_loss':
-    loss = spread_loss(y, activations, margin)
-if args.loss_type == 'margin_loss':    
-    loss = margin_loss(y, activations)
-if args.loss_type == 'cross_entropy':
-    loss = cross_entropy(y, activations)
+    y_pred = tf.argmax(activations, axis=1, name="y_proba")    
+    correct = tf.equal(tf.argmax(y, axis=1), y_pred, name="correct")
+    accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
 
-y_pred = tf.argmax(activations, axis=1, name="y_proba")    
-correct = tf.equal(tf.argmax(y, axis=1), y_pred, name="correct")
-accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
+    optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
+    training_op = optimizer.minimize(loss, name="training_op")
+    gradients, variables = zip(*optimizer.compute_gradients(loss))
 
-optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
-training_op = optimizer.minimize(loss, name="training_op")
-gradients, variables = zip(*optimizer.compute_gradients(loss))
-
-grad_check = [tf.check_numerics(g, message='Gradient NaN Found!')
-              for g in gradients if g is not None] + [tf.check_numerics(loss, message='Loss NaN Found')]
-with tf.control_dependencies(grad_check):
-    training_op = optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)      
+    grad_check = [tf.check_numerics(g, message='Gradient NaN Found!')
+                for g in gradients if g is not None] + [tf.check_numerics(loss, message='Loss NaN Found')]
+    with tf.control_dependencies(grad_check):
+        training_op = optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)      
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
