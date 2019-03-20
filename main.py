@@ -1,19 +1,33 @@
 from __future__ import division, print_function, unicode_literals
 import argparse
+from pathlib import Path
 import h5py
 import numpy as np
 import tensorflow as tf
+import pandas as pd
+import os
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 from loss import spread_loss, cross_entropy, margin_loss
 from network import baseline_model_kimcnn, baseline_model_cnn, capsule_model_A, capsule_model_B
 from sklearn.utils import shuffle
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+BIG_CATEGORY = 'beauty'
+#os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+psychic_learners_dir = Path.cwd().parent / 'PsychicLearners'
+TRAIN_CSV = str(psychic_learners_dir / 'data' / 'csvs' /
+                f'{BIG_CATEGORY}_train_split.csv')
+VALID_CSV = str(psychic_learners_dir / 'data' / 'csvs' /
+                f'{BIG_CATEGORY}_valid_split.csv')
+TEST_CSV = str(psychic_learners_dir / 'data' / 'csvs' /
+               f'{BIG_CATEGORY}_test_split.csv')
 
 tf.reset_default_graph()
 np.random.seed(0)
 tf.set_random_seed(0)
-
+tf.logging.set_verbosity(tf.logging.FATAL)
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--embedding_type', type=str, default='static',
@@ -31,13 +45,14 @@ parser.add_argument('--model_type', type=str, default='capsule-B',
 parser.add_argument('--has_test', type=int, default=1, help='If data has test, we use it. Otherwise, we use CV on folds')    
 parser.add_argument('--has_dev', type=int, default=1, help='If data has dev, we use it, otherwise we split from train')    
 
-parser.add_argument('--num_epochs', type=int, default=20, help='Number of training epochs')
+parser.add_argument('--num_epochs', type=int, default=200, help='Number of training epochs')
 parser.add_argument('--batch_size', type=int, default=25, help='Batch size for training')
 
 parser.add_argument('--use_orphan', type=bool, default='True', help='Add orphan capsule or not')
 parser.add_argument('--use_leaky', type=bool, default='False', help='Use leaky-softmax or not')
-parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate for training')#CNN 0.0005 
+parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate for training')#CNN 0.0005 
 parser.add_argument('--margin', type=float, default=0.2, help='the initial value for spread loss')
+parser.add_argument('--big_cat', type=str, default='beauty', help='fashion/mobile/beauty')
 
 import json
 args = parser.parse_args()
@@ -46,44 +61,46 @@ print(json.dumps(params, indent = 2))
 
 
 def load_data(dataset):
-    train, train_label = [],[]
-    dev, dev_label = [],[]
-    test, test_label = [],[]
     
     f = h5py.File(dataset+'.hdf5', 'r') 
     print('loading data...')    
     print(dataset)
     print("Keys: %s" % f.keys())
-  
+    
+    train_df = pd.read_csv(TRAIN_CSV)
+    valid_df = pd.read_csv(VALID_CSV)
+    test_df = pd.read_csv(TEST_CSV)
+
+    tokenizer = Tokenizer()
+    tokenizer.fit_on_texts(train_df['title'].values)
+    train_titles_seq = tokenizer.texts_to_sequences(train_df['title'].values)
+    valid_titles_seq = tokenizer.texts_to_sequences(valid_df['title'].values)
+    test_titles_seq = tokenizer.texts_to_sequences(test_df['title'].values)
+    train_titles_seq = pad_sequences(train_titles_seq, padding='post', maxlen=16)
+    valid_titles_seq = pad_sequences(valid_titles_seq, padding='post', maxlen=16)
+    test_titles_seq = pad_sequences(test_titles_seq, padding='post', maxlen=16)
+    vocab_size = len(tokenizer.word_index) + 1
+
+    train_label = train_df['Category'].values
+    valid_label = valid_df['Category'].values
+    if args.big_cat == 'fashion':
+        train_label = train_label - 17
+        valid_label = valid_label - 17
+    elif args.big_cat == 'mobile':
+        train_label = train_label - 31
+        valid_label = valid_label - 31
+    test_label = np.zeros(len(test_titles_seq))
+
     w2v = list(f['w2v'])
-    train = list(f['train'])
-    train_label = list(f['train_label'])
+    print('TRAIN _label:', train_label)
     if args.use_orphan:
-        args.num_classes = max(train_label) + 1
-      
-    if len(list(f['test'])) == 0:
-        args.has_test = 0
-    else:
-        args.has_test = 1
-        test = list(f['test'])
-        test_label = list(f['test_label'])
-    
-    for i, v in enumerate(train):
-        if np.sum(v) == 0:        
-            del(train[i])     
-            del(train_label[i])
-    
-    for i, v in enumerate(test):
-        if np.sum(v) == 0:
-            del(test[i])
-            del(test_label[i])
-    
-    train, dev, train_label, dev_label = train_test_split(train, train_label, test_size=0.1, random_state=0)
-    return train, train_label, test, test_label, dev, dev_label, w2v
+        args.num_classes = len(np.unique(train_label))
+
+    return train_titles_seq, train_label, test_titles_seq, test_label, valid_titles_seq, valid_label, vocab_size
 
 class BatchGenerator(object):
     """Generate and hold batches."""
-    def __init__(self, dataset,label, batch_size,input_size, is_shuffle=True):
+    def __init__(self, dataset,label, batch_size, input_size, is_shuffle=True):
       self._dataset = dataset
       self._label = label
       self._batch_size = batch_size    
@@ -107,10 +124,10 @@ class BatchGenerator(object):
       self._cursor += self._batch_size
       return batch_x, batch_y
 
-train, train_label, test, test_label, dev, dev_label, w2v= load_data(args.dataset)    
+train, train_label, test, test_label, dev, dev_label, vocab_size = load_data(args.dataset)    
 
-args.vocab_size = len(w2v)
-args.vec_size = w2v[0].shape[0]
+args.vocab_size = vocab_size
+args.vec_size = 128
 args.max_sent = len(train[0])
 print('max sent: ', args.max_sent)
 print('vocab size: ', args.vocab_size)
@@ -124,18 +141,18 @@ with tf.device('/cpu:0'):
 
 label = ['-1', 'earn', 'money-fx', 'trade', 'acq', 'grain', 'interest', 'crude', 'ship']
 label = map(str,label)
-args.max_sent = 200
+args.max_sent = 16
 threshold = 0.5
 
 X = tf.placeholder(tf.int32, [args.batch_size, args.max_sent], name="input_x")
-y = tf.placeholder(tf.int64, [args.batch_size, args.num_classes], name="input_y")
+y = tf.placeholder(tf.int64, [args.batch_size, int(args.num_classes)], name="input_y")
 is_training = tf.placeholder_with_default(False, shape=())    
 learning_rate = tf.placeholder(dtype='float32') 
 margin = tf.placeholder(shape=(),dtype='float32') 
 
 l2_loss = tf.constant(0.0)
 
-w2v = np.array(w2v,dtype=np.float32)
+#w2v = np.array(w2v,dtype=np.float32)
 if args.embedding_type == 'rand':
     W1 = tf.Variable(tf.random_uniform([args.vocab_size, args.vec_size], -0.25, 0.25),name="Wemb")
     X_embedding = tf.nn.embedding_lookup(W1, X)
@@ -160,13 +177,13 @@ if args.embedding_type == 'multi-channel':
 tf.logging.info("input dimension:{}".format(X_embedding.get_shape()))
 
 if args.model_type == 'capsule-A':    
-    poses, activations = capsule_model_A(X_embedding, args.num_classes)    
+    poses, activations = capsule_model_A(X_embedding, int(args.num_classes))
 if args.model_type == 'capsule-B':    
-    poses, activations = capsule_model_B(X_embedding, args.num_classes)    
+    poses, activations = capsule_model_B(X_embedding, int(args.num_classes))
 if args.model_type == 'CNN':    
-    poses, activations = baseline_model_cnn(X_embedding, args.num_classes)
+    poses, activations = baseline_model_cnn(X_embedding, int(args.num_classes))
 if args.model_type == 'KIMCNN':    
-    poses, activations = baseline_model_kimcnn(X_embedding, args.max_sent, args.num_classes)   
+    poses, activations = baseline_model_kimcnn(X_embedding, args.max_sent, int(args.num_classes))
     
 if args.loss_type == 'spread_loss':
     loss = spread_loss(y, activations, margin)
@@ -179,7 +196,7 @@ y_pred = tf.argmax(activations, axis=1, name="y_proba")
 correct = tf.equal(tf.argmax(y, axis=1), y_pred, name="correct")
 accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
 
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)   
+optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
 training_op = optimizer.minimize(loss, name="training_op")
 gradients, variables = zip(*optimizer.compute_gradients(loss))
 
@@ -209,6 +226,9 @@ sess.run(init)
 
 lr = args.learning_rate
 m = args.margin
+max_acc = 0
+saver = tf.train.Saver(tf.global_variables())
+os.makedirs(os.path.join(BIG_CATEGORY, args.model_type), exist_ok=True)
 for epoch in range(args.num_epochs):
     for iteration in range(1, n_iterations_per_epoch + 1):                
         X_batch, y_batch = mr_train.next()     
@@ -224,7 +244,7 @@ for epoch in range(args.num_epochs):
                   iteration, n_iterations_per_epoch,
                   iteration * 100 / n_iterations_per_epoch,
                   loss_train),
-              end="")                        
+              end="")
     loss_vals, acc_vals = [], []
     for iteration in range(1, n_iterations_dev + 1):
         X_batch, y_batch = mr_dev.next()            
@@ -240,8 +260,14 @@ for epoch in range(args.num_epochs):
     loss_val, acc_val = np.mean(loss_vals), np.mean(acc_vals)    
     print("\rEpoch: {}  Val accuracy: {:.1f}%  Loss: {:.4f}".format(
         epoch + 1, acc_val * 100, loss_val))
-               
+    if acc_val > max_acc:
+        max_acc = acc_val
+        
+        saver.save(sess, "{}/{}/{}.ckpt".format(BIG_CATEGORY,args.model_type, acc_val), global_step=epoch)
+        print("Model is saved.\n")
+
     preds_list, y_list = [], []
+    """
     for iteration in range(1, n_iterations_test + 1):
         X_batch, y_batch = mr_test.next()             
         probs = sess.run([activations],
@@ -254,13 +280,10 @@ for epoch in range(args.num_epochs):
     preds_probs = np.array(preds_list)                
     preds_probs[np.where( preds_probs >= threshold )] = 1.0
     preds_probs[np.where( preds_probs < threshold )] = 0.0 
-    
-    [precision, recall, F1, support] = \
-        precision_recall_fscore_support(y_list, preds_probs, average='samples')
     acc = accuracy_score(y_list, preds_probs)
+    print('\rER: %.3f' % acc) """
 
-    print ('\rER: %.3f' % acc, 'Precision: %.3f' % precision, 'Recall: %.3f' % recall, 'F1: %.3f' % F1)  
     if args.model_type == 'CNN' or args.model_type == 'KIMCNN':
-        lr = max(1e-6, lr * 0.8)
+        lr = max(1e-6, lr * 0.95)
     if args.loss_type == 'margin_loss':    
         m = min(0.9, m + 0.1)
