@@ -27,7 +27,7 @@ TEST_CSV = str(psychic_learners_dir / 'data' / 'csvs' /
 tf.reset_default_graph()
 np.random.seed(0)
 tf.set_random_seed(0)
-tf.logging.set_verbosity(tf.logging.FATAL)
+#tf.logging.set_verbosity(tf.logging.FATAL)
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--embedding_type', type=str, default='static',
@@ -205,8 +205,9 @@ grad_check = [tf.check_numerics(g, message='Gradient NaN Found!')
 with tf.control_dependencies(grad_check):
     training_op = optimizer.apply_gradients(zip(gradients, variables), global_step=global_step)      
 
-
-sess = tf.InteractiveSession()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+sess = tf.InteractiveSession(config=config)
 from keras import utils
 
 n_iterations_per_epoch = len(train) // args.batch_size
