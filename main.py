@@ -286,7 +286,7 @@ for epoch in range(args.num_epochs):
     acc = accuracy_score(y_list, preds_probs)
     print('\rER: %.3f' % acc) """
 
-    if args.model_type == 'CNN' or args.model_type == 'KIMCNN':
-        lr = max(1e-6, lr * 0.95)
+    #if args.model_type == 'CNN' or args.model_type == 'KIMCNN':
+    #    lr = max(1e-6, lr * 0.95)
     if args.loss_type == 'margin_loss':    
         m = min(0.9, m + 0.1)
