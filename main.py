@@ -153,8 +153,9 @@ with tf.device('/gpu:0'):
     l2_loss = tf.constant(0.0)
 
     #w2v = np.array(w2v,dtype=np.float32)
+with tf.device('/cpu:0'):
     if args.embedding_type == 'rand':
-        W1 = tf.Variable(tf.random_uniform([float(args.vocab_size), float(args.vec_size)], -0.25, 0.25),name="Wemb")
+        W1 = tf.Variable(tf.random_uniform([args.vocab_size, args.vec_size], -0.25, 0.25),name="Wemb")
         X_embedding = tf.nn.embedding_lookup(W1, X)
         X_embedding = X_embedding[...,tf.newaxis] 
     if args.embedding_type == 'static':
@@ -175,7 +176,7 @@ with tf.device('/gpu:0'):
         X_embedding = tf.concat([X_1,X_2],axis=-1)
 
     tf.logging.info("input dimension:{}".format(X_embedding.get_shape()))
-
+with tf.device('/gpu:0'):
     if args.model_type == 'capsule-A':    
         poses, activations = capsule_model_A(X_embedding, int(args.num_classes))
     if args.model_type == 'capsule-B':    
