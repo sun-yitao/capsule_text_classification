@@ -207,7 +207,8 @@ with tf.device('/gpu:0'):
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
-sess = tf.InteractiveSession(config=config)
+#sess = tf.InteractiveSession(config=config)
+sess = tf.Session(config=config)
 from keras import utils
 
 n_iterations_per_epoch = len(train) // args.batch_size
