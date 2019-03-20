@@ -14,8 +14,9 @@ def spread_loss(labels, activations, margin):
     )    
     gap_mit = tf.reduce_sum(tf.square(tf.nn.relu(margin - (activations_t - activations_i))))
     return gap_mit        
-def cross_entropy(y, preds):    
-    y = tf.argmax(y, axis=1)
+def cross_entropy(y, preds):
+    with tf.device('/cpu:0'):
+      y = tf.argmax(y, axis=1)
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=preds, labels=y)                                               
     loss = tf.reduce_mean(loss) 
     return loss
